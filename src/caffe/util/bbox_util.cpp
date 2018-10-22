@@ -883,6 +883,7 @@ void MineHardExamples(const Blob<Dtype>& conf_blob,
   const bool encode_variance_in_target =
       multibox_loss_param.encode_variance_in_target();
   const bool has_nms_param = multibox_loss_param.has_nms_param();
+  const bool is_condition = multibox_loss_param.is_condition();
   float nms_threshold = 0;
   int top_k = -1;
   if (has_nms_param) {
@@ -897,7 +898,7 @@ void MineHardExamples(const Blob<Dtype>& conf_blob,
       background_label_id, conf_loss_type, *all_match_indices, all_gt_bboxes,
       &all_conf_loss);
 #else
-  ComputeConfLossGPU(conf_blob, num, num_priors, num_classes,
+  ComputeConfLossGPU(conf_blob, num, num_priors, num_classes, is_condition,
       background_label_id, conf_loss_type, *all_match_indices, all_gt_bboxes,
       &all_conf_loss);
 #endif
@@ -1897,6 +1898,126 @@ void ApplyNMS(const bool* overlapped, const int num, vector<int>* indices) {
 inline int clamp(const int v, const int a, const int b) {
   return v < a ? a : v > b ? b : v;
 }
+
+void ApplySoftNMS(const vector<NormalizedBBox>& bboxes,
+      vector<float>& scores, const float score_threshold,
+      const float nms_threshold, const float variance,
+      NonMaximumSuppressionParameter_NMS_Type type, const int top_k,
+      vector<int>* indices) {
+  // Sanity check.
+  CHECK_EQ(bboxes.size(), scores.size())
+      << "bboxes and scores have different size.";
+
+  // Get top_k scores (with corresponding indices).
+  vector<pair<float, int> > score_index_vec;
+  GetMaxScoreIndex(scores, score_threshold, top_k, &score_index_vec);
+
+  indices->clear();
+  float weight = 1.0;
+  while (score_index_vec.size() != 0) {
+    const int idx = score_index_vec.front().second;
+    indices->push_back(idx);
+    scores[idx] = score_index_vec.front().first;
+    vector<pair<float, int> >::iterator it = score_index_vec.begin() + 1;
+    while(it != score_index_vec.end())
+    {
+      float score = it->first;
+      const int cur_idx = it->second;
+      float overlap = JaccardOverlap(bboxes[idx], bboxes[cur_idx]);
+      switch(type)
+      {
+        case NonMaximumSuppressionParameter_NMS_Type_Gaussian:
+          weight = exp(-1*overlap*overlap/variance);
+          break;
+        case NonMaximumSuppressionParameter_NMS_Type_Linear:
+          if(overlap >= nms_threshold)
+            weight = 1 - overlap;
+          else
+            weight = 1.0;
+          break;
+        default:
+          weight = 1.0;
+      }
+      score *= weight;
+      if(score < score_threshold)
+        it = score_index_vec.erase(it);
+      else
+      {
+        it->first = score;
+        it = it + 1;
+      }
+    }
+    // re-arrange the updated samples
+    vector<pair<float, int> >::iterator new_begin = score_index_vec.erase(score_index_vec.begin());
+    std::stable_sort(new_begin, score_index_vec.end(),
+      SortScorePairDescend<int>);
+  }
+}
+
+template <typename Dtype>
+void ApplySoftNMS(const Dtype* bboxes,
+      Dtype* scores, const int num, const float score_threshold,
+      const float nms_threshold, const float variance,
+      NonMaximumSuppressionParameter_NMS_Type type,const int top_k,
+      vector<int>* indices) {
+  // Get top_k scores (with corresponding indices).
+  vector<pair<Dtype, int> > score_index_vec;
+  GetMaxScoreIndex(scores, num, score_threshold, top_k, &score_index_vec);
+
+  // Do nms.
+  indices->clear();
+  float weight = 1.0;
+  while (score_index_vec.size() != 0) {
+    const int idx = score_index_vec.front().second;
+    indices->push_back(idx);
+    scores[idx] = score_index_vec.front().first;
+    typename vector<pair<Dtype, int> >::iterator it = score_index_vec.begin() + 1;
+    while(it != score_index_vec.end())
+    {
+      float score = it->first;
+      const int cur_idx = it->second;
+      float overlap = JaccardOverlap(bboxes + idx * 4, bboxes + cur_idx * 4);
+      switch(type)
+      {
+        case NonMaximumSuppressionParameter_NMS_Type_Gaussian:
+          weight = exp(-1*overlap*overlap/variance);
+          break;
+        case NonMaximumSuppressionParameter_NMS_Type_Linear:
+          if(overlap >= nms_threshold)
+            weight = 1 - overlap;
+          else
+            weight = 1.0;
+          break;
+        default:
+          weight = 1.0;
+      }
+      score *= weight;
+      if(score < score_threshold)
+        it = score_index_vec.erase(it);
+      else
+      {
+        it->first = score;
+        it = it + 1;
+      }
+    }
+    // re-arrange the updated samples
+    typename vector<pair<Dtype, int> >::iterator new_begin = score_index_vec.erase(score_index_vec.begin());
+    std::stable_sort(new_begin, score_index_vec.end(),
+      SortScorePairDescend<int>);
+  }
+}
+
+template void ApplySoftNMS(const float* bboxes,
+      float* scores, const int num, const float score_threshold,
+      const float nms_threshold, const float variance,
+      NonMaximumSuppressionParameter_NMS_Type type,const int top_k,
+      vector<int>* indices);
+template void ApplySoftNMS(const double* bboxes,
+      double* scores, const int num, const float score_threshold,
+      const float nms_threshold, const float variance,
+      NonMaximumSuppressionParameter_NMS_Type type,const int top_k,
+      vector<int>* indices);
+
 
 void ApplyNMSFast(const vector<NormalizedBBox>& bboxes,
       const vector<float>& scores, const float score_threshold,

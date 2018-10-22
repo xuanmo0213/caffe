@@ -116,6 +116,18 @@ class SoftmaxWithLossLayer : public LossLayer<Dtype> {
   LossParameter_NormalizationMode normalization_;
 
   int softmax_axis_, outer_num_, inner_num_;
+
+  bool focal_loss_;
+
+  bool compensate_imbalance_;
+
+  bool background_label_id_;
+
+  bool is_condition_;
+
+  Dtype gamma_;
+
+  Dtype alpha_;
 };
 
 }  // namespace caffe

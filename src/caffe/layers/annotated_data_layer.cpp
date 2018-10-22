@@ -18,6 +18,12 @@ template <typename Dtype>
 AnnotatedDataLayer<Dtype>::AnnotatedDataLayer(const LayerParameter& param)
   : BasePrefetchingDataLayer<Dtype>(param),
     reader_(param) {
+    voc2mic_.insert(make_pair(0, 0));
+    voc2mic_.insert(make_pair(2, 1));
+    voc2mic_.insert(make_pair(6, 2));
+    voc2mic_.insert(make_pair(7, 3));
+    voc2mic_.insert(make_pair(14, 4));
+    voc2mic_.insert(make_pair(15, 5));
 }
 
 template <typename Dtype>
@@ -277,15 +283,24 @@ void AnnotatedDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
         batch->label_.Reshape(label_shape);
         top_label = batch->label_.mutable_cpu_data();
         int idx = 0;
+        //item_id indicate which image in a batch
+        //anno_group point to a certain non empty class object in current image
+        //anno point to a certain annotated groudtruth bbox of current class in current image
         for (int item_id = 0; item_id < batch_size; ++item_id) {
           const vector<AnnotationGroup>& anno_vec = all_anno[item_id];
           for (int g = 0; g < anno_vec.size(); ++g) {
             const AnnotationGroup& anno_group = anno_vec[g];
+            int group_id = 0;
             for (int a = 0; a < anno_group.annotation_size(); ++a) {
               const Annotation& anno = anno_group.annotation(a);
               const NormalizedBBox& bbox = anno.bbox();
               top_label[idx++] = item_id;
-              top_label[idx++] = anno_group.group_label();
+              // top_label[idx++] = voc2mic_[anno_group.group_label()];
+              // if (voc2mic_.find(anno_group.group_label())==voc2mic_.end())
+              //   group_id = anno_group.group_label();
+              // else
+              group_id = anno_group.group_label();
+              top_label[idx++] = group_id;
               top_label[idx++] = anno.instance_id();
               top_label[idx++] = bbox.xmin();
               top_label[idx++] = bbox.ymin();

@@ -119,7 +119,7 @@ class Transformer:
             raise Exception('{} is not one of the net inputs: {}'.format(
                 in_, self.inputs))
 
-    def preprocess(self, in_, data):
+    def preprocess(self, in_, data, copy=False):
         """
         Format input for Caffe:
         - convert to single
@@ -134,13 +134,14 @@ class Transformer:
         ----------
         in_ : name of input blob to preprocess for
         data : (H' x W' x K) ndarray
+        copy : boolean, whether copy the input data or directly process on the input
 
         Returns
         -------
         caffe_in : (K x H x W) ndarray for input to a Net
         """
         self.__check_input(in_)
-        caffe_in = data.astype(np.float32, copy=False)
+        caffe_in = data.astype(np.float32, copy=copy)
         transpose = self.transpose.get(in_)
         channel_swap = self.channel_swap.get(in_)
         raw_scale = self.raw_scale.get(in_)

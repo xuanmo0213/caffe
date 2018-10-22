@@ -74,6 +74,10 @@ class BaseConvolutionLayer : public Layer<Dtype> {
   Blob<int> conv_input_shape_;
   /// @brief The spatial dimensions of the col_buffer.
   vector<int> col_buffer_shape_;
+  /// test mec
+  vector<int> col_buffer_kernel_shape_;
+  vector<int> output_buffer_shape_;
+
   /// @brief The spatial dimensions of the output.
   vector<int> output_shape_;
   const vector<int>* bottom_shape_;
@@ -92,6 +96,8 @@ class BaseConvolutionLayer : public Layer<Dtype> {
   bool bias_term_;
   bool is_1x1_;
   bool force_nd_im2col_;
+  bool using_approximate_;
+  ConvolutionParameter_Optimization opt_;
 
  private:
   // wrap im2col/col2im so we don't have to remember the (long) argument lists
@@ -109,6 +115,18 @@ class BaseConvolutionLayer : public Layer<Dtype> {
           pad_.cpu_data(), stride_.cpu_data(), dilation_.cpu_data(), col_buff);
     }
   }
+<<<<<<< HEAD
+=======
+  inline void conv_kn2row_cpu(const Dtype* kernel, const int x, const int y, Dtype* kernel_buff) {
+    if (!force_nd_im2col_ && num_spatial_axes_ == 2) {
+      kn2row_cpu(kernel, conv_in_channels_, x, y,
+                 kernel_shape_.cpu_data()[0], kernel_shape_.cpu_data()[1],
+                 num_output_, kernel_buff);
+    } else {
+      LOG(FATAL) << "force_nd_im2col and kn2row opt could not be set at the same time";
+    }
+  }
+>>>>>>> tiny/master
   inline void conv_col2im_cpu(const Dtype* col_buff, Dtype* data) {
     if (!force_nd_im2col_ && num_spatial_axes_ == 2) {
       col2im_cpu(col_buff, conv_in_channels_,
@@ -139,6 +157,12 @@ class BaseConvolutionLayer : public Layer<Dtype> {
           stride_.gpu_data(), dilation_.gpu_data(), col_buff);
     }
   }
+<<<<<<< HEAD
+=======
+  inline void conv_kn2row_gpu(const Dtype* data, const int x, const int y, Dtype* col_buff) {
+    NOT_IMPLEMENTED;
+  }
+>>>>>>> tiny/master
   inline void conv_col2im_gpu(const Dtype* col_buff, Dtype* data) {
     if (!force_nd_im2col_ && num_spatial_axes_ == 2) {
       col2im_gpu(col_buff, conv_in_channels_,
@@ -167,6 +191,13 @@ class BaseConvolutionLayer : public Layer<Dtype> {
 
   Blob<Dtype> col_buffer_;
   Blob<Dtype> bias_multiplier_;
+<<<<<<< HEAD
+=======
+
+  Blob<Dtype> weights_buffer_;
+  Blob<Dtype> output_buffer_;
+  Blob<Dtype> tune_buffer_;
+>>>>>>> tiny/master
 };
 
 }  // namespace caffe

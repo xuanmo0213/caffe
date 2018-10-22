@@ -1,5 +1,9 @@
 #include <algorithm>
 #include <vector>
+<<<<<<< HEAD
+=======
+#include <cmath>
+>>>>>>> tiny/master
 
 #include "caffe/layers/sigmoid_cross_entropy_loss_layer.hpp"
 #include "caffe/util/math_functions.hpp"
@@ -29,6 +33,17 @@ void SigmoidCrossEntropyLossLayer<Dtype>::LayerSetUp(
                      LossParameter_NormalizationMode_BATCH_SIZE;
   } else {
     normalization_ = LossParameter_NormalizationMode_BATCH_SIZE;
+  }
+  if(this->layer_param_.loss_param().has_focal_loss_param())
+  {
+    focal_loss_ = this->layer_param_.loss_param().focal_loss();
+    compensate_imbalance_ = this->layer_param_.loss_param().focal_loss_param().compensate_imbalance();
+    gamma_ = this->layer_param_.loss_param().focal_loss_param().gamma();
+  }
+  else
+  {
+    focal_loss_ = false;
+    compensate_imbalance_ = false;
   }
 }
 
@@ -87,15 +102,60 @@ void SigmoidCrossEntropyLossLayer<Dtype>::Forward_cpu(
   const Dtype* target = bottom[1]->cpu_data();
   int valid_count = 0;
   Dtype loss = 0;
-  for (int i = 0; i < bottom[0]->count(); ++i) {
-    const int target_value = static_cast<int>(target[i]);
-    if (has_ignore_label_ && target_value == ignore_label_) {
-      continue;
-    }
-    loss -= input_data[i] * (target[i] - (input_data[i] >= 0)) -
-        log(1 + exp(input_data[i] - 2 * input_data[i] * (input_data[i] >= 0)));
-    ++valid_count;
+  Dtype alpha_ = 0.0;
+  if(compensate_imbalance_)
+  {
+    alpha_ = caffe_cpu_asum(bottom[1]->count(),target)/Dtype((bottom[1]->count()));
   }
+
+  if(!focal_loss_&&!compensate_imbalance_)
+    for (int i = 0; i < bottom[0]->count(); ++i) {
+      const int target_value = static_cast<int>(target[i]);
+      if (has_ignore_label_ && target_value == ignore_label_) {
+        continue;
+      }
+      loss -= input_data[i] * (target[i] - (input_data[i] >= 0)) -
+          log(1 + exp(input_data[i] - 2 * input_data[i] * (input_data[i] >= 0)));
+      ++valid_count;
+    }
+
+  if(!focal_loss_&&compensate_imbalance_)
+    for (int i = 0; i < bottom[0]->count(); ++i) {
+      const int target_value = static_cast<int>(target[i]);
+      if (has_ignore_label_ && target_value == ignore_label_) {
+        continue;
+      }
+      loss -= (input_data[i] * (target[i] - (input_data[i] >= 0)) -
+          log(1 + exp(input_data[i] - 2 * input_data[i] * (input_data[i] >= 0)))) *
+          (target[i]==1?(1/alpha_):(1/(1-alpha_)));
+      ++valid_count;
+    }
+
+  if(focal_loss_&&!compensate_imbalance_)
+    for (int i = 0; i < bottom[0]->count(); ++i) {
+      const int target_value = static_cast<int>(target[i]);
+      if (has_ignore_label_ && target_value == ignore_label_) {
+        continue;
+      }
+      loss -= (input_data[i] * (target[i] - (input_data[i] >= 0)) -
+          log(1 + exp(input_data[i] - 2 * input_data[i] * (input_data[i] >= 0)))) /
+          pow(1+exp((2*target[i]-1)*input_data[i]),gamma_);
+      ++valid_count;
+    }
+
+  if(focal_loss_&&compensate_imbalance_)
+    for (int i = 0; i < bottom[0]->count(); ++i) {
+      const int target_value = static_cast<int>(target[i]);
+      if (has_ignore_label_ && target_value == ignore_label_) {
+        continue;
+      }
+      loss -= input_data[i] * (target[i] - (input_data[i] >= 0)) -
+          log(1 + exp(input_data[i] - 2 * input_data[i] * (input_data[i] >= 0))) *
+          (target[i]==1?(1/alpha_):(1/(1-alpha_))) /
+          pow(1+exp((2*target[i]-1)*input_data[i]),gamma_);
+      ++valid_count;
+    }
+
   normalizer_ = get_normalizer(normalization_, valid_count);
   top[0]->mutable_cpu_data()[0] = loss / normalizer_;
 }
@@ -114,16 +174,72 @@ void SigmoidCrossEntropyLossLayer<Dtype>::Backward_cpu(
     const Dtype* sigmoid_output_data = sigmoid_output_->cpu_data();
     const Dtype* target = bottom[1]->cpu_data();
     Dtype* bottom_diff = bottom[0]->mutable_cpu_diff();
-    caffe_sub(count, sigmoid_output_data, target, bottom_diff);
-    // Zero out gradient of ignored targets.
-    if (has_ignore_label_) {
-      for (int i = 0; i < count; ++i) {
-        const int target_value = static_cast<int>(target[i]);
-        if (target_value == ignore_label_) {
-          bottom_diff[i] = 0;
+
+    if(!compensate_imbalance_&&!focal_loss_)
+    {
+      caffe_sub(count, sigmoid_output_data, target, bottom_diff);
+      if (has_ignore_label_) {
+        for (int i = 0; i < count; ++i) {
+          const int target_value = static_cast<int>(target[i]);
+          if (target_value == ignore_label_) {
+            bottom_diff[i] = 0;
+          }
         }
       }
     }
+
+    if(compensate_imbalance_&&!focal_loss_)
+    {
+      // Zero out gradient of ignored targets.
+      if (has_ignore_label_) {
+        for (int i = 0; i < count; ++i) {
+          const int target_value = static_cast<int>(target[i]);
+          if (target_value == ignore_label_)
+            bottom_diff[i] = 0;
+          else
+            bottom_diff[i] = (sigmoid_output_data[i] - target[i])/((2*alpha_-1)*target[i]+1-alpha_);
+        }
+      }
+    }
+
+    if(!compensate_imbalance_&&focal_loss_)
+    {
+      // Zero out gradient of ignored targets.
+      if (has_ignore_label_) {
+        for (int i = 0; i < count; ++i) {
+          const int target_value = static_cast<int>(target[i]);
+          if (target_value == ignore_label_) {
+            bottom_diff[i] = 0;
+          }
+          else if(target[i]==0)
+            bottom_diff[i] = pow(sigmoid_output_data[i],gamma_)*(sigmoid_output_data[i]-gamma_*log(1-sigmoid_output_data[i])*(1-sigmoid_output_data[i]));
+          else
+            bottom_diff[i] = pow(1-sigmoid_output_data[i],gamma_)*
+                            (gamma_*log(sigmoid_output_data[i])*sigmoid_output_data[i]-sigmoid_output_data[i]-1+sigmoid_output_data[i]);
+        }
+      }
+    }
+
+    if(compensate_imbalance_&&focal_loss_)
+    {
+      // Zero out gradient of ignored targets.
+      if (has_ignore_label_) {
+        for (int i = 0; i < count; ++i) {
+          const int target_value = static_cast<int>(target[i]);
+          if (target_value == ignore_label_) {
+            bottom_diff[i] = 0;
+          }
+          else if(target[i]==0)
+            bottom_diff[i] = pow(sigmoid_output_data[i],gamma_)*(sigmoid_output_data[i]-gamma_*log(1-sigmoid_output_data[i])*(1-sigmoid_output_data[i]));
+          else
+            bottom_diff[i] = pow(1-sigmoid_output_data[i],gamma_)*
+                            (gamma_*log(sigmoid_output_data[i])*sigmoid_output_data[i]-sigmoid_output_data[i]-1+sigmoid_output_data[i]);
+
+          bottom_diff[i] = bottom_diff[i]/((2*alpha_-1)*target[i]+1-alpha_);
+        }
+      }
+    }
+
     // Scale down gradient
     Dtype loss_weight = top[0]->cpu_diff()[0] / normalizer_;
     caffe_scal(count, loss_weight, bottom_diff);

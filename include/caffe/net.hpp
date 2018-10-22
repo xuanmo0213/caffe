@@ -6,6 +6,11 @@
 #include <string>
 #include <utility>
 #include <vector>
+<<<<<<< HEAD
+=======
+#include <fstream>
+#include <iostream>
+>>>>>>> tiny/master
 
 #include "caffe/blob.hpp"
 #include "caffe/common.hpp"
@@ -27,7 +32,7 @@ class Net {
   explicit Net(const string& param_file, Phase phase,
       const int level = 0, const vector<string>* stages = NULL,
       const Net* root_net = NULL);
-  virtual ~Net() {}
+  virtual ~Net() { if(time_logger_) time_logger_.close(); }
 
   /// @brief Initialize a network with a NetParameter.
   void Init(const NetParameter& param);
@@ -309,6 +314,7 @@ class Net {
   /// The root net that actually holds the shared layers in data parallelism
   const Net* const root_net_;
   DISABLE_COPY_AND_ASSIGN(Net);
+  std::ofstream time_logger_;
 };
 
 

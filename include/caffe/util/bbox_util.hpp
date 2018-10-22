@@ -17,6 +17,7 @@
 #include "glog/logging.h"
 
 #include "caffe/caffe.hpp"
+#include "caffe/proto/caffe.pb.h"
 
 namespace caffe {
 
@@ -37,13 +38,14 @@ bool SortBBoxAscend(const NormalizedBBox& bbox1, const NormalizedBBox& bbox2);
 // in descend order based on the score value.
 bool SortBBoxDescend(const NormalizedBBox& bbox1, const NormalizedBBox& bbox2);
 
-// Function sued to sort pair<float, T>, stored in STL container (e.g. vector)
+
+// Function used to sort pair<float, T>, stored in STL container (e.g. vector)
 // in descend order based on the score (first) value.
 template <typename T>
 bool SortScorePairAscend(const pair<float, T>& pair1,
                          const pair<float, T>& pair2);
 
-// Function sued to sort pair<float, T>, stored in STL container (e.g. vector)
+// Function used to sort pair<float, T>, stored in STL container (e.g. vector)
 // in descend order based on the score (first) value.
 template <typename T>
 bool SortScorePairDescend(const pair<float, T>& pair1,
@@ -435,6 +437,33 @@ void ApplyNMSFast(const Dtype* bboxes, const Dtype* scores, const int num,
       const float score_threshold, const float nms_threshold,
       const float eta, const int top_k, vector<int>* indices);
 
+<<<<<<< HEAD
+=======
+void ApplySoftNMS(const vector<NormalizedBBox>& bboxes,
+      vector<float>& scores, const float score_threshold,
+      const float nms_threshold, const float variance,
+      NonMaximumSuppressionParameter_NMS_Type type,const int top_k,
+      vector<int>* indices);
+
+// Do soft non maximum suppression based on raw bboxes and scores data.
+// Inspired by Improving Object Detection With One Line of Code
+// https://github.com/bharatsingh430/soft-nms
+//    bboxes: an array of bounding boxes.
+//    scores: an array of corresponding confidences.
+//    num: number of total boxes/confidences in the array.
+//    score_threshold: a threshold used to filter detection results.
+//    nms_threshold: a threshold used in non maximum suppression.
+//    eta: adaptation rate for nms threshold (see Piotr's paper).
+//    top_k: if not -1, keep at most top_k picked indices.
+//    indices: the kept indices of bboxes after nms.
+template <typename Dtype>
+void ApplySoftNMS(const Dtype* bboxes,
+      Dtype* scores, const int num, const float score_threshold,
+      const float nms_threshold, const float variance,
+      NonMaximumSuppressionParameter_NMS_Type type,const int top_k,
+      vector<int>* indices);
+
+>>>>>>> tiny/master
 // Compute cumsum of a set of pairs.
 void CumSum(const vector<pair<float, int> >& pairs, vector<int>* cumsum);
 
@@ -478,7 +507,11 @@ void PermuteDataGPU(const int nthreads,
 
 template <typename Dtype>
 void SoftMaxGPU(const Dtype* data, const int outer_num, const int channels,
+<<<<<<< HEAD
     const int inner_num, Dtype* prob);
+=======
+    const int inner_num, Dtype* prob, const bool is_condition);
+>>>>>>> tiny/master
 
 template <typename Dtype>
 void ComputeOverlappedGPU(const int nthreads,
@@ -502,7 +535,7 @@ void GetDetectionsGPU(const Dtype* bbox_data, const Dtype* conf_data,
 
 template <typename Dtype>
   void ComputeConfLossGPU(const Blob<Dtype>& conf_blob, const int num,
-      const int num_preds_per_class, const int num_classes,
+      const int num_preds_per_class, const int num_classes, const bool is_condition,
       const int background_label_id, const ConfLossType loss_type,
       const vector<map<int, vector<int> > >& all_match_indices,
       const map<int, vector<NormalizedBBox> >& all_gt_bboxes,

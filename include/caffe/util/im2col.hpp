@@ -17,6 +17,12 @@ void im2col_cpu(const Dtype* data_im, const int channels,
     Dtype* data_col);
 
 template <typename Dtype>
+void kn2row_cpu(const Dtype* data_kn, const int kernel_loc_x, const int kernel_loc_y,
+    const int channels, const int kernel_h, const int kernel_w,
+    const int kernel_num,
+    Dtype* kernel_row);
+
+template <typename Dtype>
 void col2im_nd_cpu(const Dtype* data_col, const int num_spatial_axes,
     const int* im_shape, const int* col_shape,
     const int* kernel_shape, const int* pad, const int* stride,

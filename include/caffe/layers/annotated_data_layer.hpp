@@ -36,6 +36,8 @@ class AnnotatedDataLayer : public BasePrefetchingDataLayer<Dtype> {
   AnnotatedDatum_AnnotationType anno_type_;
   vector<BatchSampler> batch_samplers_;
   string label_map_file_;
+  //temperary code: transfer the label from voc domain to micro voc domain (background, bike, bus, car, motorbike, person)
+  map<int, int> voc2mic_;
 };
 
 }  // namespace caffe

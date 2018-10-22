@@ -437,7 +437,7 @@ message ParamSpec {
 // NOTE
 // Update the next available ID when you add a new LayerParameter field.
 //
-// LayerParameter next available layer-specific ID: 147 (last added: recurrent_param)
+// LayerParameter next available layer-specific ID: 153 (last added: class_label_param)
 message LayerParameter {
   optional string name = 1; // the layer name
   optional string type = 2; // the layer type
@@ -542,6 +542,54 @@ message LayerParameter {
   optional TileParameter tile_param = 138;
   optional VideoDataParameter video_data_param = 207;
   optional WindowDataParameter window_data_param = 129;
+  optional RandomShuffleParameter random_shuffle_param = 147;
+  optional CorrelationParameter correlation_param = 148;
+  optional DynamicRoutineParameter dynamic_routine_param = 149;
+  optional MMParameter mm_param = 150;
+  optional DeformSampleParameter deform_sample_param = 151;
+  optional ClassLabelParameter class_label_param = 152;
+}
+
+// Message for class label generation
+message ClassLabelParameter {
+  enum Label_type {
+    CLASSIFICATION = 0;
+    SEGMENTATION = 1;
+  }
+
+  optional uint32 num_classes = 1;
+  optional Label_type label_type = 2 [default = CLASSIFICATION];
+  optional float variance = 3 [default = 1.0];
+}
+
+// Message for DeformSample
+message DeformSampleParameter {
+  optional uint32 num_samples_per_loc = 1;
+}
+
+// Message for matrix maltiplication
+message MMParameter {
+  optional uint32 num_output = 1;
+  optional bool normalize = 2 [default=false];
+  optional float eps = 3 [default=1e-10];
+  optional FillerParameter weight_filler = 4; // The filler for the weight
+}
+
+// Message for dynamic routine
+message DynamicRoutineParameter {
+  optional int32 iterations = 1 [default=1];
+}
+
+// Message for blob correlation
+message CorrelationParameter {
+  optional int32 kernel_size = 1 [default=1];
+  optional int32 displacement = 2;
+  optional int32 dilation = 3;
+}
+
+// Message for random shuffle inside each blob
+message RandomShuffleParameter {
+  optional uint32 axis = 1 [default = 1];
 }
 
 // Message that stores parameters used to apply transformation
@@ -725,6 +773,11 @@ message LossParameter {
     // Do not normalize the loss.
     NONE = 3;
   }
+  // If specified, the corresponding loss is compute with focal loss algorithm: Loss = -(1-p)^(gamma)*log(p)
+  // only implemented in SoftmaxWithLoss and SigmoidCrossEntropyLoss Layers.
+  optional bool focal_loss = 4 [default=false];
+
+  optional FocalLossParameter focal_loss_param = 5;
   // For historical reasons, the default normalization for
   // SigmoidCrossEntropyLoss is BATCH_SIZE and *not* VALID.
   optional NormalizationMode normalization = 3 [default = VALID];
@@ -732,6 +785,17 @@ message LossParameter {
   // is not specified, then setting this to false will be equivalent to
   // normalization = BATCH_SIZE to be consistent with previous behavior.
   optional bool normalize = 2;
+}
+
+//Message used for focal loss computation
+message FocalLossParameter {
+  optional float gamma = 1 [default=0.0];
+  //if specified, an additional alpha is put in front of focal loss to compensate the class imbalance
+  optional bool compensate_imbalance = 2 [default=false];
+  //specify the hyperparameter for forground/backgroud equilization, valid only if compensate_imbalance is true
+  optional float alpha = 3 [default=0.5];
+  //specify the background label id, valid only if compensate_imbalance is true
+  optional uint32 background_label_id = 4 [default=0];
 }
 
 // Messages that store parameters used by individual layer types follow, in
@@ -876,6 +940,14 @@ message ConvolutionParameter {
   }
   optional Engine engine = 15 [default = DEFAULT];
 
+  enum Optimization{
+    IM2COL = 0;
+    KN2ROW = 1;
+  }
+
+  optional Optimization optimization = 20 [default = IM2COL];
+  optional bool using_approximate = 21 [default = true];
+
   // The axis to interpret as "channels" when performing convolution.
   // Preceding dimensions are treated as independent inputs;
   // succeeding dimensions are treated as "spatial".
@@ -970,12 +1042,22 @@ message DetectionEvaluateParameter {
 }
 
 message NonMaximumSuppressionParameter {
+  // NMS type
+  enum NMS_Type {
+    Standard = 0;
+    Linear = 1;
+    Gaussian = 2;
+  }
   // Threshold to be used in nms.
   optional float nms_threshold = 1 [default = 0.3];
   // Maximum number of results to be kept.
   optional int32 top_k = 2;
   // Parameter for adaptive nms.
   optional float eta = 3 [default = 1.0];
+
+  optional NMS_Type type = 4 [default = Standard];
+
+  optional float variance = 5 [default = 0.1];
 }
 
 message SaveOutputParameter {
@@ -1312,6 +1394,11 @@ message MultiBoxLossParameter {
   optional NonMaximumSuppressionParameter nms_param = 21;
   optional int32 sample_size = 22 [default = 64];
   optional bool use_prior_for_nms = 23 [default = false];
+  // Parameters used for focal classification loss computation
+  optional float gamma = 24 [default=0.0];
+  optional bool correct_class_imbalance = 25 [default=false];
+
+  optional bool is_condition = 26 [default=false];
 }
 
 message MVNParameter {
@@ -1374,6 +1461,7 @@ message PoolingParameter {
   // If global_pooling then it will pool over the size of the bottom by doing
   // kernel_h = bottom->height and kernel_w = bottom->width
   optional bool global_pooling = 12 [default = false];
+  optional bool ceil_mode = 13 [default = true];
 }
 
 message PowerParameter {
@@ -1632,11 +1720,12 @@ message SoftmaxParameter {
     CUDNN = 2;
   }
   optional Engine engine = 1 [default = DEFAULT];
-
   // The axis along which to perform the softmax -- may be negative to index
   // from the end (e.g., -1 for the last axis).
   // Any other axes will be evaluated as independent softmaxes.
   optional int32 axis = 2 [default = 1];
+  // variable to denote whether use conditional softmax probability
+  optional bool condition = 3 [default = false];
 }
 
 message TanHParameter {

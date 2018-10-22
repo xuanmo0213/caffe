@@ -1,6 +1,10 @@
 #include <algorithm>
 #include <cfloat>
 #include <vector>
+<<<<<<< HEAD
+=======
+#include <cmath>
+>>>>>>> tiny/master
 
 #include "caffe/layers/softmax_loss_layer.hpp"
 #include "caffe/util/math_functions.hpp"
@@ -12,7 +16,14 @@ void SoftmaxWithLossLayer<Dtype>::LayerSetUp(
     const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top) {
   LossLayer<Dtype>::LayerSetUp(bottom, top);
   LayerParameter softmax_param(this->layer_param_);
-  softmax_param.set_type("Softmax");
+  is_condition_ = this->layer_param_.softmax_param().condition();
+  if(!is_condition_)
+    softmax_param.set_type("Softmax");
+  else
+  {
+    softmax_param.set_type("ConditionSoftmax");
+  }
+
   softmax_layer_ = LayerRegistry<Dtype>::CreateLayer(softmax_param);
   softmax_bottom_vec_.clear();
   softmax_bottom_vec_.push_back(bottom[0]);
@@ -24,6 +35,23 @@ void SoftmaxWithLossLayer<Dtype>::LayerSetUp(
     this->layer_param_.loss_param().has_ignore_label();
   if (has_ignore_label_) {
     ignore_label_ = this->layer_param_.loss_param().ignore_label();
+  }
+
+  if (this->layer_param_.loss_param().has_focal_loss()&&this->layer_param_.loss_param().has_focal_loss_param())
+  {
+    focal_loss_ = this->layer_param_.loss_param().focal_loss();
+    compensate_imbalance_ = this->layer_param_.loss_param().focal_loss_param().compensate_imbalance();
+    gamma_ = this->layer_param_.loss_param().focal_loss_param().gamma();
+    alpha_ = this->layer_param_.loss_param().focal_loss_param().alpha();
+    background_label_id_ = this->layer_param_.loss_param().focal_loss_param().background_label_id();
+  }
+  else
+  {
+    focal_loss_ = false;
+    compensate_imbalance_ = false;
+    gamma_ = 0.0;
+    background_label_id_ = 0;
+    alpha_ = 0.0;
   }
   if (!this->layer_param_.loss_param().has_normalization() &&
       this->layer_param_.loss_param().has_normalize()) {
@@ -65,19 +93,78 @@ void SoftmaxWithLossLayer<Dtype>::Forward_cpu(
   int dim = prob_.count() / outer_num_;
   int count = 0;
   Dtype loss = 0;
-  for (int i = 0; i < outer_num_; ++i) {
-    for (int j = 0; j < inner_num_; j++) {
-      const int label_value = static_cast<int>(label[i * inner_num_ + j]);
-      if (has_ignore_label_ && label_value == ignore_label_) {
-        continue;
+
+  //compute class frequency if needed
+  if(compensate_imbalance_)
+  {
+    if(focal_loss_)
+      for (int i = 0; i < outer_num_; ++i) {
+        for (int j = 0; j < inner_num_; j++) {
+          const int label_value = static_cast<int>(label[i * inner_num_ + j]);
+          if (has_ignore_label_ && label_value == ignore_label_) {
+            continue;
+          }
+          DCHECK_GE(label_value, 0);
+          DCHECK_LT(label_value, prob_.shape(softmax_axis_));
+          if(label_value==background_label_id_)
+          	loss -= pow(1 - prob_data[i * dim + label_value * inner_num_ + j],gamma_)*log(std::max(prob_data[i * dim + label_value * inner_num_ + j],
+                               	Dtype(FLT_MIN)))*(1-alpha_);
+          else
+                loss -= pow(1 - prob_data[i * dim + label_value * inner_num_ + j],gamma_)*log(std::max(prob_data[i * dim + label_value * inner_num_ + j],
+                                Dtype(FLT_MIN)))*alpha_;
+          count++;
+        }
       }
-      DCHECK_GE(label_value, 0);
-      DCHECK_LT(label_value, prob_.shape(softmax_axis_));
-      loss -= log(std::max(prob_data[i * dim + label_value * inner_num_ + j],
-                           Dtype(FLT_MIN)));
-      ++count;
+    else
+      for (int i = 0; i < outer_num_; ++i) {
+        for (int j = 0; j < inner_num_; j++) {
+          const int label_value = static_cast<int>(label[i * inner_num_ + j]);
+          if (has_ignore_label_ && label_value == ignore_label_) {
+            continue;
+          }
+          DCHECK_GE(label_value, 0);
+          DCHECK_LT(label_value, prob_.shape(softmax_axis_));
+          if(label_value==background_label_id_)
+          	loss -= log(std::max(prob_data[i * dim + label_value * inner_num_ + j],
+                               Dtype(FLT_MIN)))*(1-alpha_);
+          else
+                loss -= log(std::max(prob_data[i * dim + label_value * inner_num_ + j],
+                               Dtype(FLT_MIN)))*alpha_;
+          count++;
+        }
+      }
+  }
+  else
+  {
+    if(focal_loss_)
+      for (int i = 0; i < outer_num_; ++i) {
+        for (int j = 0; j < inner_num_; j++) {
+          const int label_value = static_cast<int>(label[i * inner_num_ + j]);
+          if (has_ignore_label_ && label_value == ignore_label_) {
+            continue;
+          }
+          DCHECK_GE(label_value, 0);
+          DCHECK_LT(label_value, prob_.shape(softmax_axis_));
+          loss -= pow(1 - prob_data[i * dim + label_value * inner_num_ + j],gamma_)*log(std::max(prob_data[i * dim + label_value * inner_num_ + j],
+                               Dtype(FLT_MIN)));
+          ++count;
+        }
+      }
+    for (int i = 0; i < outer_num_; ++i) {
+      for (int j = 0; j < inner_num_; j++) {
+        const int label_value = static_cast<int>(label[i * inner_num_ + j]);
+        if (has_ignore_label_ && label_value == ignore_label_) {
+          continue;
+        }
+        DCHECK_GE(label_value, 0);
+        DCHECK_LT(label_value, prob_.shape(softmax_axis_));
+        loss -= log(std::max(prob_data[i * dim + label_value * inner_num_ + j],
+                             Dtype(FLT_MIN)));
+        ++count;
+      }
     }
   }
+
   Dtype normalizer = LossLayer<Dtype>::GetNormalizer(
       normalization_, outer_num_, inner_num_, count);
   top[0]->mutable_cpu_data()[0] = loss / normalizer;
@@ -95,24 +182,100 @@ void SoftmaxWithLossLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
   }
   if (propagate_down[0]) {
     Dtype* bottom_diff = bottom[0]->mutable_cpu_diff();
-    const Dtype* prob_data = prob_.cpu_data();
-    caffe_copy(prob_.count(), prob_data, bottom_diff);
-    const Dtype* label = bottom[1]->cpu_data();
     int dim = prob_.count() / outer_num_;
     int count = 0;
-    for (int i = 0; i < outer_num_; ++i) {
-      for (int j = 0; j < inner_num_; ++j) {
-        const int label_value = static_cast<int>(label[i * inner_num_ + j]);
-        if (has_ignore_label_ && label_value == ignore_label_) {
-          for (int c = 0; c < bottom[0]->shape(softmax_axis_); ++c) {
-            bottom_diff[i * dim + c * inner_num_ + j] = 0;
+    const Dtype* prob_data = prob_.cpu_data();
+
+    const Dtype* label = bottom[1]->cpu_data();
+
+    if(compensate_imbalance_)
+    {
+
+      if(focal_loss_)
+      {
+        for (int i = 0; i < outer_num_; ++i) {
+          for (int j = 0; j < inner_num_; ++j) {
+            const int label_value = static_cast<int>(label[i * inner_num_ + j]);
+            if (has_ignore_label_ && label_value == ignore_label_) {
+              for (int c = 0; c < bottom[0]->shape(softmax_axis_); ++c) {
+                bottom_diff[i * dim + c * inner_num_ + j] = 0;
+              }
+            } else {
+              Dtype base_p = prob_data[i*dim+label_value*inner_num_+j];
+              Dtype base = pow(1-base_p,gamma_-1)*(base_p-gamma_*base_p*log(base_p)-1);
+              for(int c = 0; c< bottom[0]->shape(softmax_axis_); ++c)
+                if(c==label_value)
+                  bottom_diff[i * dim + c * inner_num_ + j] = base*(1-base_p)*(label_value==background_label_id_?(1-alpha_):alpha_);
+                else
+                  bottom_diff[i * dim + c * inner_num_ + j] = base*(prob_data[i*dim+c*inner_num_+j])*(label_value==background_label_id_?(1-alpha_):alpha_);
+              ++count;
+            }
           }
-        } else {
-          bottom_diff[i * dim + label_value * inner_num_ + j] -= 1;
-          ++count;
+        }
+      }
+      else
+      {
+        caffe_copy(prob_.count(), prob_data, bottom_diff);
+        for (int i = 0; i < outer_num_; ++i) {
+          for (int j = 0; j < inner_num_; ++j) {
+            const int label_value = static_cast<int>(label[i * inner_num_ + j]);
+            if (has_ignore_label_ && label_value == ignore_label_) {
+              for (int c = 0; c < bottom[0]->shape(softmax_axis_); ++c) {
+                bottom_diff[i * dim + c * inner_num_ + j] = 0;
+              }
+            } else {
+              bottom_diff[i * dim + label_value * inner_num_ + j] -= 1;
+              for(int c = 0; c< bottom[0]->shape(softmax_axis_); ++c)
+                bottom_diff[i * dim + c * inner_num_ + j] *= (label_value==background_label_id_?(1-alpha_):alpha_);
+              ++count;
+            }
+          }
         }
       }
     }
+    else
+    {
+      if(focal_loss_)
+      {
+        for (int i = 0; i < outer_num_; ++i) {
+          for (int j = 0; j < inner_num_; ++j) {
+            const int label_value = static_cast<int>(label[i * inner_num_ + j]);
+            if (has_ignore_label_ && label_value == ignore_label_) {
+              for (int c = 0; c < bottom[0]->shape(softmax_axis_); ++c) {
+                bottom_diff[i * dim + c * inner_num_ + j] = 0;
+              }
+            } else {
+              Dtype base_p = prob_data[i*dim+label_value*inner_num_+j];
+              Dtype base = pow(base_p,gamma_-1)*(base_p-gamma_*base_p*log(base_p)-1);
+              for(int c = 0; c< bottom[0]->shape(softmax_axis_); ++c)
+                if(c==label_value)
+                  bottom_diff[i * dim + c * inner_num_ + j] = base*(1-base_p);
+                else
+                  bottom_diff[i * dim + c * inner_num_ + j] = base*(prob_data[i*dim+c*inner_num_+j]);
+              ++count;
+            }
+          }
+        }
+      }
+      else
+      {
+        caffe_copy(prob_.count(), prob_data, bottom_diff);
+        for (int i = 0; i < outer_num_; ++i) {
+          for (int j = 0; j < inner_num_; ++j) {
+            const int label_value = static_cast<int>(label[i * inner_num_ + j]);
+            if (has_ignore_label_ && label_value == ignore_label_) {
+              for (int c = 0; c < bottom[0]->shape(softmax_axis_); ++c) {
+                bottom_diff[i * dim + c * inner_num_ + j] = 0;
+              }
+            } else {
+              bottom_diff[i * dim + label_value * inner_num_ + j] -= 1;
+              ++count;
+            }
+          }
+        }
+      }
+    }
+    
     // Scale gradient
     Dtype normalizer = LossLayer<Dtype>::GetNormalizer(
         normalization_, outer_num_, inner_num_, count);

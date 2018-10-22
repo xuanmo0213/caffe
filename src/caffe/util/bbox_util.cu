@@ -252,12 +252,13 @@ template void PermuteDataGPU(const int nthreads,
 
 template <typename Dtype>
 __global__ void kernel_channel_max(const int num, const int channels,
-    const int spatial_dim, const Dtype* data, Dtype* out) {
+    const int spatial_dim, const Dtype* data, Dtype* out, const bool is_condition) {
   CUDA_KERNEL_LOOP(index, num * spatial_dim) {
     int n = index / spatial_dim;
     int s = index % spatial_dim;
     Dtype maxval = -FLT_MAX;
-    for (int c = 0; c < channels; ++c) {
+    int start_idx = is_condition ? 1 : 0;
+    for (int c = start_idx; c < channels; ++c) {
       maxval = max(data[(n * channels + c) * spatial_dim + s], maxval);
     }
     out[index] = maxval;
@@ -268,29 +269,37 @@ template <typename Dtype>
 __global__ void kernel_channel_subtract(const int count,
     const int num, const int channels,
     const int spatial_dim, const Dtype* channel_data, const Dtype* channel_max,
-    Dtype* data) {
+    Dtype* data, const bool is_condition) {
   CUDA_KERNEL_LOOP(index, count) {
     int n = index / channels / spatial_dim;
     int s = index % spatial_dim;
-    data[index] = channel_data[index] - channel_max[n * spatial_dim + s];
+    int c = (index / spatial_dim) % channels;
+    if(!is_condition || c != 0)
+      data[index] = channel_data[index] - channel_max[n * spatial_dim + s];
   }
 }
 
 template <typename Dtype>
-__global__ void kernel_exp(const int count, const Dtype* data, Dtype* out) {
+__global__ void kernel_exp(const int count, const int spatial_dim, const int channels,
+ const Dtype* data, Dtype* out, const bool is_condition) {
   CUDA_KERNEL_LOOP(index, count) {
-    out[index] = exp(data[index]);
+    int c = (index / spatial_dim) % channels;
+    if(is_condition && c==0)
+      out[index] = 1/(1+exp(-1*data[index]));
+    else
+      out[index] = exp(data[index]);
   }
 }
 
 template <typename Dtype>
 __global__ void kernel_channel_sum(const int num, const int channels,
-    const int spatial_dim, const Dtype* data, Dtype* channel_sum) {
+    const int spatial_dim, const Dtype* data, Dtype* channel_sum, const bool is_condition) {
   CUDA_KERNEL_LOOP(index, num * spatial_dim) {
     int n = index / spatial_dim;
     int s = index % spatial_dim;
     Dtype sum = 0;
-    for (int c = 0; c < channels; ++c) {
+    int start_idx = is_condition ? 1 : 0;
+    for (int c = start_idx; c < channels; ++c) {
       sum += data[(n * channels + c) * spatial_dim + s];
     }
     channel_sum[index] = sum;
@@ -300,17 +309,33 @@ __global__ void kernel_channel_sum(const int num, const int channels,
 template <typename Dtype>
 __global__ void kernel_channel_div(const int count,
     const int num, const int channels,
-    const int spatial_dim, const Dtype* channel_sum, Dtype* data) {
+    const int spatial_dim, const Dtype* channel_sum, Dtype* data, const bool is_condition) {
   CUDA_KERNEL_LOOP(index, count) {
     int n = index / channels / spatial_dim;
     int s = index % spatial_dim;
-    data[index] /= channel_sum[n * spatial_dim + s];
+    int c = (index / spatial_dim) % channels;
+    if(!is_condition || c!=0)
+      data[index] /= channel_sum[n * spatial_dim + s];
+  }
+}
+
+template <typename Dtype>
+__global__ void kernel_channel_mul(
+    const int num, const int channels,
+    const int spatial_dim, const Dtype* condition, Dtype* data) {
+  CUDA_KERNEL_LOOP(index, num*spatial_dim) {
+    int n = index / spatial_dim;
+    int s = index % spatial_dim;
+    for(int c = 1; c < channels; c++)
+    {
+      data[(n*channels+c)*spatial_dim+s] *= (1.0 - condition[n*channels*spatial_dim+s]);
+    }
   }
 }
 
 template <typename Dtype>
 void SoftMaxGPU(const Dtype* data, const int outer_num,
-    const int channels, const int inner_num, Dtype* prob) {
+    const int channels, const int inner_num, Dtype* prob, const bool is_condition) {
   vector<int> shape(4, 1);
   shape[0] = outer_num;
   shape[1] = channels;
@@ -324,32 +349,36 @@ void SoftMaxGPU(const Dtype* data, const int outer_num,
   // NOLINT_NEXT_LINE(whitespace/operators)
   kernel_channel_max<Dtype><<<CAFFE_GET_BLOCKS(outer_num * inner_num),
       CAFFE_CUDA_NUM_THREADS>>>(outer_num, channels, inner_num, data,
-      scale_data);
+      scale_data, is_condition);
   // subtract
   // NOLINT_NEXT_LINE(whitespace/operators)
   kernel_channel_subtract<Dtype><<<CAFFE_GET_BLOCKS(count),
       CAFFE_CUDA_NUM_THREADS>>>(count, outer_num, channels, inner_num,
-      data, scale_data, prob);
+      data, scale_data, prob, is_condition);
   // exponentiate
   // NOLINT_NEXT_LINE(whitespace/operators)
   kernel_exp<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
-      count, prob, prob);
+      count, inner_num, channels, prob, prob, is_condition);
   // sum after exp
   // NOLINT_NEXT_LINE(whitespace/operators)
   kernel_channel_sum<Dtype><<<CAFFE_GET_BLOCKS(outer_num * inner_num),
       CAFFE_CUDA_NUM_THREADS>>>(outer_num, channels, inner_num, prob,
-      scale_data);
+      scale_data, is_condition);
   // divide
   // NOLINT_NEXT_LINE(whitespace/operators)
   kernel_channel_div<Dtype><<<CAFFE_GET_BLOCKS(count),
       CAFFE_CUDA_NUM_THREADS>>>(count, outer_num, channels, inner_num,
-      scale_data, prob);
+      scale_data, prob, is_condition);
+
+  if(is_condition)
+    kernel_channel_mul<Dtype><<<CAFFE_GET_BLOCKS(outer_num*inner_num),
+      CAFFE_CUDA_NUM_THREADS>>>(outer_num, channels, inner_num, prob, prob);
 }
 
 template void SoftMaxGPU(const float* data, const int outer_num,
-    const int channels, const int inner_num, float* prob);
+    const int channels, const int inner_num, float* prob, const bool is_condition);
 template void SoftMaxGPU(const double* data, const int outer_num,
-    const int channels, const int inner_num, double* prob);
+    const int channels, const int inner_num, double* prob, const bool is_condition);
 
 template <typename Dtype>
 __global__ void ComputeOverlappedKernel(const int nthreads,
@@ -571,7 +600,7 @@ __global__ void ComputeConfLossKernel(const int nthreads,
 
 template <typename Dtype>
 void ComputeConfLossGPU(const Blob<Dtype>& conf_blob, const int num,
-      const int num_preds_per_class, const int num_classes,
+      const int num_preds_per_class, const int num_classes, const bool is_condition,
       const int background_label_id, const ConfLossType loss_type,
       const vector<map<int, vector<int> > >& all_match_indices,
       const map<int, vector<NormalizedBBox> >& all_gt_bboxes,
@@ -579,6 +608,7 @@ void ComputeConfLossGPU(const Blob<Dtype>& conf_blob, const int num,
   CHECK_LT(background_label_id, num_classes);
   Blob<Dtype> match_blob(num, num_preds_per_class, 1, 1);
   Dtype* match_data = match_blob.mutable_cpu_data();
+  caffe_gpu_set(match_blob.count(), Dtype(background_label_id), match_data);
   for (int i = 0; i < num; ++i) {
     const map<int, vector<int> >& match_indices = all_match_indices[i];
     for (int p = 0; p < num_preds_per_class; ++p) {
@@ -611,7 +641,7 @@ void ComputeConfLossGPU(const Blob<Dtype>& conf_blob, const int num,
   if (loss_type == MultiBoxLossParameter_ConfLossType_SOFTMAX) {
     Dtype* prob_gpu_data = prob_blob.mutable_gpu_data();
     SoftMaxGPU(conf_blob.gpu_data(), num * num_preds_per_class, num_classes, 1,
-        prob_gpu_data);
+        prob_gpu_data, is_condition);
     conf_gpu_data = prob_blob.gpu_data();
   }
   // Compute the loss.
@@ -634,13 +664,13 @@ void ComputeConfLossGPU(const Blob<Dtype>& conf_blob, const int num,
 
 // Explicit initialization.
 template void ComputeConfLossGPU(const Blob<float>& conf_data, const int num,
-      const int num_preds_per_class, const int num_classes,
+      const int num_preds_per_class, const int num_classes, const bool is_condition,
       const int background_label_id, const ConfLossType loss_type,
       const vector<map<int, vector<int> > >& all_match_indices,
       const map<int, vector<NormalizedBBox> >& all_gt_bboxes,
       vector<vector<float> >* all_conf_loss);
 template void ComputeConfLossGPU(const Blob<double>& conf_data, const int num,
-      const int num_preds_per_class, const int num_classes,
+      const int num_preds_per_class, const int num_classes, const bool is_condition,
       const int background_label_id, const ConfLossType loss_type,
       const vector<map<int, vector<int> > >& all_match_indices,
       const map<int, vector<NormalizedBBox> >& all_gt_bboxes,

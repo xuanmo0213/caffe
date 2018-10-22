@@ -1,4 +1,8 @@
 #include <vector>
+<<<<<<< HEAD
+=======
+#include <cmath>
+>>>>>>> tiny/master
 
 #include "caffe/layers/sigmoid_cross_entropy_loss_layer.hpp"
 #include "caffe/util/math_functions.hpp"
@@ -10,17 +14,68 @@ template <typename Dtype>
 __global__ void SigmoidCrossEntropyLossForwardGPU(const int nthreads,
           const Dtype* input_data, const Dtype* target, Dtype* loss,
           const bool has_ignore_label_, const int ignore_label_,
-          Dtype* counts) {
+          Dtype* counts, bool focal_loss, bool compensate_imbalance, Dtype alpha, Dtype gamma) {
   CUDA_KERNEL_LOOP(i, nthreads) {
     const int target_value = static_cast<int>(target[i]);
     if (has_ignore_label_ && target_value == ignore_label_) {
       loss[i] = 0;
       counts[i] = 0;
     } else {
-      loss[i] = input_data[i] * (target[i] - (input_data[i] >= 0)) -
-          log(1 + exp(input_data[i] - 2 * input_data[i] *
-          (input_data[i] >= 0)));
-      counts[i] = 1;
+
+      if(!focal_loss&&!compensate_imbalance)
+        loss[i] = input_data[i] * (target[i] - (input_data[i] >= 0)) -
+            log(1 + exp(input_data[i] - 2 * input_data[i] * (input_data[i] >= 0)));
+
+      if(!focal_loss&&compensate_imbalance)
+        loss[i] = (input_data[i] * (target[i] - (input_data[i] >= 0)) -
+            log(1 + exp(input_data[i] - 2 * input_data[i] * (input_data[i] >= 0)))) *
+            (target[i]==0?(alpha):(1-alpha));
+
+     if(focal_loss&&!compensate_imbalance)
+        loss[i] = (input_data[i] * (target[i] - (input_data[i] >= 0)) -
+            log(1 + exp(input_data[i] - 2 * input_data[i] * (input_data[i] >= 0)))) /
+            pow(1+exp((2*target[i]-1)*input_data[i]),gamma);
+
+     if(focal_loss&&compensate_imbalance)
+        loss[i] = input_data[i] * (target[i] - (input_data[i] >= 0)) -
+          log(1 + exp(input_data[i] - 2 * input_data[i] * (input_data[i] >= 0))) *
+          (target[i]==0?(alpha):(1-alpha)) /
+          pow(1+exp((2*target[i]-1)*input_data[i]),gamma);
+
+     counts[i] = 1;
+    }
+  }
+}
+
+template <typename Dtype>
+__global__ void SigmoidCrossEntropyLossBackwardGPU(const int nthreads,
+            const Dtype* sigmoid_output_data, const Dtype* target, Dtype* bottom_diff,
+            bool focal_loss, bool compensate_imbalance, Dtype alpha, Dtype gamma){
+  CUDA_KERNEL_LOOP(i,nthreads)
+  {
+    if(compensate_imbalance&&!focal_loss)
+    {
+          bottom_diff[i] = (sigmoid_output_data[i] - target[i])*((1-2*alpha)*target[i]+alpha);
+    }
+
+    if(!compensate_imbalance&&focal_loss)
+    {
+         if(target[i]==0)
+            bottom_diff[i] = pow(sigmoid_output_data[i],gamma)*(sigmoid_output_data[i]-gamma*log(1-sigmoid_output_data[i])*(1-sigmoid_output_data[i]));
+          else
+            bottom_diff[i] = pow(1-sigmoid_output_data[i],gamma)*
+                            (gamma*log(sigmoid_output_data[i])*sigmoid_output_data[i]-1+sigmoid_output_data[i]);
+    }
+
+    if(compensate_imbalance&&focal_loss)
+    {
+       if(target[i]==0)
+            bottom_diff[i] = pow(sigmoid_output_data[i],gamma)*(sigmoid_output_data[i]-gamma*log(1-sigmoid_output_data[i])*(1-sigmoid_output_data[i]));
+          else
+            bottom_diff[i] = pow(1-sigmoid_output_data[i],gamma)*
+                            (gamma*log(sigmoid_output_data[i])*sigmoid_output_data[i]-1+sigmoid_output_data[i]);
+
+          bottom_diff[i] = bottom_diff[i]*((1-2*alpha)*target[i]+alpha);
     }
   }
 }
@@ -35,7 +90,6 @@ __global__ void SigmoidCrossEntropyLossIgnoreDiffGPU(const int count,
     }
   }
 }
-
 
 template <typename Dtype>
 void SigmoidCrossEntropyLossLayer<Dtype>::Forward_gpu(
@@ -54,10 +108,15 @@ void SigmoidCrossEntropyLossLayer<Dtype>::Forward_gpu(
   Dtype* loss_data = bottom[0]->mutable_gpu_diff();
   Dtype* count_data = bottom[1]->mutable_gpu_diff();
   Dtype valid_count;
+  if(compensate_imbalance_)
+  {
+    caffe_gpu_asum(bottom[1]->count(),target,&alpha_);
+    alpha_ = alpha_/(bottom[1]->count());
+  }
   // NOLINT_NEXT_LINE(whitespace/operators)
   SigmoidCrossEntropyLossForwardGPU<Dtype><<<CAFFE_GET_BLOCKS(count),
       CAFFE_CUDA_NUM_THREADS>>>(count, input_data, target, loss_data,
-      has_ignore_label_, ignore_label_, count_data);
+      has_ignore_label_, ignore_label_, count_data, focal_loss_, compensate_imbalance_, alpha_, gamma_);
   // Only launch another CUDA kernel if we actually need the valid count.
   if (normalization_ == LossParameter_NormalizationMode_VALID &&
       has_ignore_label_) {
@@ -85,8 +144,17 @@ void SigmoidCrossEntropyLossLayer<Dtype>::Backward_gpu(
     const Dtype* sigmoid_output_data = sigmoid_output_->gpu_data();
     const Dtype* target = bottom[1]->gpu_data();
     Dtype* bottom_diff = bottom[0]->mutable_gpu_diff();
-    caffe_copy(count, sigmoid_output_data, bottom_diff);
-    caffe_gpu_axpy(count, Dtype(-1), target, bottom_diff);
+    if(!focal_loss_&&!compensate_imbalance_)
+    {
+      caffe_copy(count, sigmoid_output_data, bottom_diff);
+      caffe_gpu_axpy(count, Dtype(-1), target, bottom_diff);
+    }
+    else
+    {
+      SigmoidCrossEntropyLossBackwardGPU<Dtype><<<CAFFE_GET_BLOCKS(count),
+        CAFFE_CUDA_NUM_THREADS>>>(count, sigmoid_output_data ,target, bottom_diff,
+                   focal_loss_, compensate_imbalance_,alpha_, gamma_);
+    }
     // Zero out gradient of ignored targets.
     if (has_ignore_label_) {
       // NOLINT_NEXT_LINE(whitespace/operators)

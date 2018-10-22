@@ -31,9 +31,17 @@ void DetectionOutputLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   // Parameters used in nms.
   nms_threshold_ = detection_output_param.nms_param().nms_threshold();
   CHECK_GE(nms_threshold_, 0.) << "nms_threshold must be non negative.";
-  eta_ = detection_output_param.nms_param().eta();
-  CHECK_GT(eta_, 0.);
-  CHECK_LE(eta_, 1.);
+  type_ = detection_output_param.nms_param().type();
+  if(type_ == NonMaximumSuppressionParameter_NMS_Type_Standard)
+  {
+    eta_ = detection_output_param.nms_param().eta();
+    CHECK_GT(eta_, 0.);
+    CHECK_LE(eta_, 1.);
+  }
+  else if(type_ == NonMaximumSuppressionParameter_NMS_Type_Gaussian)
+  {
+    variance_ = detection_output_param.nms_param().variance();
+  }
   top_k_ = -1;
   if (detection_output_param.nms_param().has_top_k()) {
     top_k_ = detection_output_param.nms_param().top_k();
@@ -43,7 +51,7 @@ void DetectionOutputLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   output_directory_ = save_output_param.output_directory();
   if (!output_directory_.empty()) {
     if (boost::filesystem::is_directory(output_directory_)) {
-      // boost::filesystem::remove_all(output_directory_);
+      boost::filesystem::remove_all(output_directory_);
     }
     if (!boost::filesystem::create_directories(output_directory_)) {
         LOG(WARNING) << "Failed to create directory: " << output_directory_;
@@ -212,7 +220,7 @@ void DetectionOutputLayer<Dtype>::Forward_cpu(
   vector<map<int, vector<int> > > all_indices;
   for (int i = 0; i < num; ++i) {
     const LabelBBox& decode_bboxes = all_decode_bboxes[i];
-    const map<int, vector<float> >& conf_scores = all_conf_scores[i];
+    map<int, vector<float> >& conf_scores = all_conf_scores[i];
     map<int, vector<int> > indices;
     int num_det = 0;
     for (int c = 0; c < num_classes_; ++c) {
@@ -224,7 +232,7 @@ void DetectionOutputLayer<Dtype>::Forward_cpu(
         // Something bad happened if there are no predictions for current label.
         LOG(FATAL) << "Could not find confidence predictions for label " << c;
       }
-      const vector<float>& scores = conf_scores.find(c)->second;
+      vector<float>& scores = conf_scores.find(c)->second;
       int label = share_location_ ? -1 : c;
       if (decode_bboxes.find(label) == decode_bboxes.end()) {
         // Something bad happened if there are no predictions for current label.
@@ -232,8 +240,16 @@ void DetectionOutputLayer<Dtype>::Forward_cpu(
         continue;
       }
       const vector<NormalizedBBox>& bboxes = decode_bboxes.find(label)->second;
-      ApplyNMSFast(bboxes, scores, confidence_threshold_, nms_threshold_, eta_,
-          top_k_, &(indices[c]));
+      if(type_ == NonMaximumSuppressionParameter_NMS_Type_Standard)
+      {
+        ApplyNMSFast(bboxes, scores, confidence_threshold_, nms_threshold_, eta_,
+            top_k_, &(indices[c]));
+      }
+      else
+      {
+        ApplySoftNMS(bboxes, scores, confidence_threshold_, nms_threshold_, variance_, type_,
+            top_k_, &(indices[c]));
+      }
       num_det += indices[c].size();
     }
     if (keep_top_k_ > -1 && num_det > keep_top_k_) {

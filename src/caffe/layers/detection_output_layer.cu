@@ -13,6 +13,10 @@
 #include "boost/foreach.hpp"
 
 #include "caffe/layers/detection_output_layer.hpp"
+<<<<<<< HEAD
+=======
+#include "caffe/proto/caffe.pb.h"
+>>>>>>> tiny/master
 
 namespace caffe {
 
@@ -45,7 +49,7 @@ void DetectionOutputLayer<Dtype>::Forward_gpu(
   Dtype* conf_permute_data = conf_permute_.mutable_gpu_data();
   PermuteDataGPU<Dtype>(bottom[1]->count(), bottom[1]->gpu_data(),
       num_classes_, num_priors_, 1, conf_permute_data);
-  const Dtype* conf_cpu_data = conf_permute_.cpu_data();
+  Dtype* conf_cpu_data = conf_permute_.mutable_cpu_data();
 
   int num_kept = 0;
   vector<map<int, vector<int> > > all_indices;
@@ -64,13 +68,21 @@ void DetectionOutputLayer<Dtype>::Forward_gpu(
         // Ignore background class.
         continue;
       }
-      const Dtype* cur_conf_data = conf_cpu_data + conf_idx + c * num_priors_;
+      Dtype* cur_conf_data = conf_cpu_data + conf_idx + c * num_priors_;
       const Dtype* cur_bbox_data = bbox_cpu_data + bbox_idx;
       if (!share_location_) {
         cur_bbox_data += c * num_priors_ * 4;
       }
-      ApplyNMSFast(cur_bbox_data, cur_conf_data, num_priors_,
-          confidence_threshold_, nms_threshold_, eta_, top_k_, &(indices[c]));
+      if(type_== NonMaximumSuppressionParameter_NMS_Type_Standard)
+      {
+        ApplyNMSFast(cur_bbox_data, cur_conf_data, num_priors_,
+            confidence_threshold_, nms_threshold_, eta_, top_k_, &(indices[c]));
+      }
+      else
+      {
+        ApplySoftNMS(cur_bbox_data, cur_conf_data, num_priors_,
+            confidence_threshold_, nms_threshold_, variance_, type_, top_k_, &(indices[c]));
+      }
       num_det += indices[c].size();
     }
     if (keep_top_k_ > -1 && num_det > keep_top_k_) {
@@ -110,7 +122,7 @@ void DetectionOutputLayer<Dtype>::Forward_gpu(
   top_shape.push_back(7);
   Dtype* top_data;
   if (num_kept == 0) {
-    LOG(INFO) << "Couldn't find any detections";
+    DLOG(INFO) << "Couldn't find any detections";
     top_shape[2] = num;
     top[0]->Reshape(top_shape);
     top_data = top[0]->mutable_cpu_data();

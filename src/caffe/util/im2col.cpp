@@ -2,6 +2,10 @@
 
 #include "caffe/util/im2col.hpp"
 #include "caffe/util/math_functions.hpp"
+<<<<<<< HEAD
+=======
+#include "caffe/common.hpp"
+>>>>>>> tiny/master
 
 namespace caffe {
 
@@ -54,6 +58,22 @@ void im2col_cpu(const Dtype* data_im, const int channels,
   }
 }
 
+template <typename Dtype>
+void kn2row_cpu(const Dtype* data_kn, const int kernel_loc_x, const int kernel_loc_y, const int channels,
+    const int kernel_h, const int kernel_w, const int kernel_num,
+    Dtype* kernel_row)
+{
+   const int kernel_spatial_size = kernel_w*kernel_h;
+   const int kernel_dim = kernel_spatial_size*channels;
+
+      for(int kernel_index = 0; kernel_index < kernel_num; kernel_index++)
+        for(int ch = 0; ch < channels; ch++)
+        {
+          *(kernel_row) = data_kn[kernel_index*kernel_dim+ch*kernel_spatial_size+kernel_loc_y*kernel_w+kernel_loc_x];
+          kernel_row++;
+        }
+}
+
 // Explicit instantiation
 template void im2col_cpu<float>(const float* data_im, const int channels,
     const int height, const int width, const int kernel_h, const int kernel_w,
@@ -65,6 +85,15 @@ template void im2col_cpu<double>(const double* data_im, const int channels,
     const int pad_h, const int pad_w, const int stride_h,
     const int stride_w, const int dilation_h, const int dilation_w,
     double* data_col);
+template void kn2row_cpu<float>(const float* data_kn, const int kernel_loc_x,
+    const int kernel_loc_y, const int channels,
+    const int kernel_h, const int kernel_w, const int kernel_num,
+    float* kernel_row);
+template void kn2row_cpu<double>(const double* data_kn, const int kernel_loc_x,
+    const int kernel_loc_y, const int channels,
+    const int kernel_h, const int kernel_w, const int kernel_num,
+    double* kernel_row);
+
 
 template <typename Dtype>
 inline void im2col_nd_core_cpu(const Dtype* data_input, const bool im2col,

@@ -4,6 +4,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <fstream>
 
 #include "hdf5.h"
 
@@ -18,6 +19,9 @@
 #include "caffe/util/upgrade_proto.hpp"
 
 #include "caffe/test/test_caffe_main.hpp"
+
+#include <iostream>
+#include <opencv2/opencv.hpp>
 
 namespace caffe {
 
@@ -43,6 +47,14 @@ Net<Dtype>::Net(const string& param_file, Phase phase,
   }
   param.mutable_state()->set_level(level);
   Init(param);
+  string time_file_name;
+//  if(param.has_name())
+//    time_file_name = param.name() + "_time_logger.txt";
+//  else
+//    time_file_name = "default_time_logger.txt";
+
+//  time_logger_.open(time_file_name.c_str(),std::ofstream::out);
+//  CHECK(time_logger_.good()) << "Open time logger file failed";
 }
 
 template <typename Dtype>
@@ -545,9 +557,17 @@ Dtype Net<Dtype>::ForwardFromTo(int start, int end) {
   CHECK_GE(start, 0);
   CHECK_LT(end, layers_.size());
   Dtype loss = 0;
+
+
   for (int i = start; i <= end; ++i) {
-    // LOG(ERROR) << "Forwarding " << layer_names_[i];
+    //LOG(ERROR) << "Forwarding " << layer_names_[i];
+    //std::cout << "Forwarding " << layer_names_[i];
+//    double t = (double)cv::getTickCount();
     Dtype layer_loss = layers_[i]->Forward(bottom_vecs_[i], top_vecs_[i]);
+//    t = ((double)cv::getTickCount() - t) / cv::getTickFrequency();
+//       std::cout<< "[Forwarding] " << layer_names_[i] << " using time: " << t<< endl;
+//       time_logger_ << layer_names_[i] << " " << t << endl;
+
     loss += layer_loss;
     if (debug_info_) { ForwardDebugInfo(i); }
   }

@@ -91,12 +91,32 @@ void MultiBoxLossLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   conf_bottom_vec_.push_back(&conf_gt_);
   conf_loss_.Reshape(loss_shape);
   conf_top_vec_.push_back(&conf_loss_);
+
+
+  LayerParameter layer_param;
+  if(this->layer_param_.loss_param().has_focal_loss()&&this->layer_param_.loss_param().has_focal_loss_param())
+  {
+      layer_param.mutable_loss_param()->set_focal_loss(this->layer_param_.loss_param().focal_loss());
+      layer_param.mutable_loss_param()->
+                  mutable_focal_loss_param()->
+                  set_gamma(this->layer_param_.loss_param().focal_loss_param().gamma());
+      layer_param.mutable_loss_param()->
+                  mutable_focal_loss_param()->
+                  set_compensate_imbalance(this->layer_param_.loss_param().focal_loss_param().compensate_imbalance());
+      layer_param.mutable_loss_param()->
+                  mutable_focal_loss_param()->
+                  set_alpha(this->layer_param_.loss_param().focal_loss_param().alpha());
+      layer_param.mutable_loss_param()->
+                  mutable_focal_loss_param()->
+                  set_background_label_id(this->layer_param_.loss_param().focal_loss_param().background_label_id());
+      //layer_param.mutable_loss_param()->set_allocated_focal_loss_param(this->layer_param_.loss_param().mutable_focal_loss_param());
+  }
+
   if (conf_loss_type_ == MultiBoxLossParameter_ConfLossType_SOFTMAX) {
     CHECK_GE(background_label_id_, 0)
         << "background_label_id should be within [0, num_classes) for Softmax.";
     CHECK_LT(background_label_id_, num_classes_)
         << "background_label_id should be within [0, num_classes) for Softmax.";
-    LayerParameter layer_param;
     layer_param.set_name(this->layer_param_.name() + "_softmax_conf");
     layer_param.set_type("SoftmaxWithLoss");
     layer_param.add_loss_weight(Dtype(1.));
@@ -104,6 +124,7 @@ void MultiBoxLossLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
         LossParameter_NormalizationMode_NONE);
     SoftmaxParameter* softmax_param = layer_param.mutable_softmax_param();
     softmax_param->set_axis(1);
+    softmax_param->set_condition(multibox_loss_param_.is_condition());
     // Fake reshape.
     vector<int> conf_shape(1, 1);
     conf_gt_.Reshape(conf_shape);
@@ -112,7 +133,6 @@ void MultiBoxLossLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
     conf_loss_layer_ = LayerRegistry<Dtype>::CreateLayer(layer_param);
     conf_loss_layer_->SetUp(conf_bottom_vec_, conf_top_vec_);
   } else if (conf_loss_type_ == MultiBoxLossParameter_ConfLossType_LOGISTIC) {
-    LayerParameter layer_param;
     layer_param.set_name(this->layer_param_.name() + "_logistic_conf");
     layer_param.set_type("SigmoidCrossEntropyLoss");
     layer_param.add_loss_weight(Dtype(1.));
@@ -133,7 +153,7 @@ void MultiBoxLossLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top) {
   LossLayer<Dtype>::Reshape(bottom, top);
   num_ = bottom[0]->num();
-  num_priors_ = bottom[2]->height() / 4;
+  num_priors_ = bottom[2]->height() / 4; //total number of anchors(default boxes)
   num_gt_ = bottom[3]->height();
   CHECK_EQ(bottom[0]->num(), bottom[1]->num());
   CHECK_EQ(num_priors_ * loc_classes_ * 4, bottom[0]->channels())
@@ -145,10 +165,10 @@ void MultiBoxLossLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
 template <typename Dtype>
 void MultiBoxLossLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
     const vector<Blob<Dtype>*>& top) {
-  const Dtype* loc_data = bottom[0]->cpu_data();
-  const Dtype* conf_data = bottom[1]->cpu_data();
-  const Dtype* prior_data = bottom[2]->cpu_data();
-  const Dtype* gt_data = bottom[3]->cpu_data();
+  const Dtype* loc_data = bottom[0]->cpu_data(); // n x num_prior*4
+  const Dtype* conf_data = bottom[1]->cpu_data(); // n x num_prior*(c+1)
+  const Dtype* prior_data = bottom[2]->cpu_data(); // 1 x 2 x num_prior*4
+  const Dtype* gt_data = bottom[3]->cpu_data(); // 1 x 1 x num_gt x 8
 
   // Retrieve all ground truth.
   map<int, vector<NormalizedBBox> > all_gt_bboxes;
@@ -162,16 +182,20 @@ void MultiBoxLossLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
   GetPriorBBoxes(prior_data, num_priors_, &prior_bboxes, &prior_variances);
 
   // Retrieve all predictions.
+  // typedef map<int, vector<NormalizedBBox> > LabelBBox;
   vector<LabelBBox> all_loc_preds;
   GetLocPredictions(loc_data, num_, num_priors_, loc_classes_, share_location_,
                     &all_loc_preds);
 
   // Find matches between source bboxes and ground truth bboxes.
+  // vector<map<int, vector<int> > > all_match_indices_; item i: -1 --> <2, 4, -1, -1,..., 8>
+  //                                                     (store matched gt_index) length:num_priors
+  // vector<vector<int> > all_neg_indices_;
   vector<map<int, vector<float> > > all_match_overlaps;
   FindMatches(all_loc_preds, all_gt_bboxes, prior_bboxes, prior_variances,
               multibox_loss_param_, &all_match_overlaps, &all_match_indices_);
 
-  num_matches_ = 0;
+  num_matches_ = 0; // collect the matched positive samples
   int num_negs = 0;
   // Sample hard negative (and positive) examples based on mining type.
   MineHardExamples(*bottom[1], all_loc_preds, all_gt_bboxes, prior_bboxes,
@@ -244,11 +268,14 @@ void MultiBoxLossLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
         normalization_, num_, num_priors_, num_matches_);
     top[0]->mutable_cpu_data()[0] +=
         loc_weight_ * loc_loss_.cpu_data()[0] / normalizer;
+
+    //LOG(INFO) << "Loc loss : " << loc_loss_.cpu_data()[0] / normalizer;
   }
   if (this->layer_param_.propagate_down(1)) {
     Dtype normalizer = LossLayer<Dtype>::GetNormalizer(
         normalization_, num_, num_priors_, num_matches_);
     top[0]->mutable_cpu_data()[0] += conf_loss_.cpu_data()[0] / normalizer;
+    //LOG(INFO) << "Conf loss : " << conf_loss_.cpu_data()[0] / normalizer;
   }
 }
 

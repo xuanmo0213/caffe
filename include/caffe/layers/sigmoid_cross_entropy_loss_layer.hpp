@@ -113,11 +113,17 @@ class SigmoidCrossEntropyLossLayer : public LossLayer<Dtype> {
   /// top vector holder to call the underlying SigmoidLayer::Forward
   vector<Blob<Dtype>*> sigmoid_top_vec_;
 
+  /// whether to use focal loss
+  bool focal_loss_;
+  /// whether to use imbalance compensation
+  bool compensate_imbalance_;
   /// Whether to ignore instances with a certain label.
   bool has_ignore_label_;
   /// The label indicating that an instance should be ignored.
   int ignore_label_;
   /// How to normalize the loss.
+  Dtype alpha_;
+  Dtype gamma_;
   LossParameter_NormalizationMode normalization_;
   Dtype normalizer_;
   int outer_num_, inner_num_;

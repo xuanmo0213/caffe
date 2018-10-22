@@ -111,6 +111,8 @@ class DetectionOutputLayer : public Layer<Dtype> {
   Blob<Dtype> bbox_preds_;
   Blob<Dtype> bbox_permute_;
   Blob<Dtype> conf_permute_;
+  NonMaximumSuppressionParameter_NMS_Type type_;
+  float variance_;
 };
 
 }  // namespace caffe
