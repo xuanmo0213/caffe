@@ -13,10 +13,7 @@
 #include "boost/foreach.hpp"
 
 #include "caffe/layers/detection_output_layer.hpp"
-<<<<<<< HEAD
-=======
 #include "caffe/proto/caffe.pb.h"
->>>>>>> tiny/master
 
 namespace caffe {
 

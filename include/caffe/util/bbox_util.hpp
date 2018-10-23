@@ -437,8 +437,6 @@ void ApplyNMSFast(const Dtype* bboxes, const Dtype* scores, const int num,
       const float score_threshold, const float nms_threshold,
       const float eta, const int top_k, vector<int>* indices);
 
-<<<<<<< HEAD
-=======
 void ApplySoftNMS(const vector<NormalizedBBox>& bboxes,
       vector<float>& scores, const float score_threshold,
       const float nms_threshold, const float variance,
@@ -463,7 +461,6 @@ void ApplySoftNMS(const Dtype* bboxes,
       NonMaximumSuppressionParameter_NMS_Type type,const int top_k,
       vector<int>* indices);
 
->>>>>>> tiny/master
 // Compute cumsum of a set of pairs.
 void CumSum(const vector<pair<float, int> >& pairs, vector<int>* cumsum);
 
@@ -507,11 +504,7 @@ void PermuteDataGPU(const int nthreads,
 
 template <typename Dtype>
 void SoftMaxGPU(const Dtype* data, const int outer_num, const int channels,
-<<<<<<< HEAD
-    const int inner_num, Dtype* prob);
-=======
     const int inner_num, Dtype* prob, const bool is_condition);
->>>>>>> tiny/master
 
 template <typename Dtype>
 void ComputeOverlappedGPU(const int nthreads,

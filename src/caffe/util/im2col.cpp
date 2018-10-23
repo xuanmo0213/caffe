@@ -2,10 +2,7 @@
 
 #include "caffe/util/im2col.hpp"
 #include "caffe/util/math_functions.hpp"
-<<<<<<< HEAD
-=======
 #include "caffe/common.hpp"
->>>>>>> tiny/master
 
 namespace caffe {
 

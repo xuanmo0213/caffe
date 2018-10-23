@@ -1,10 +1,7 @@
 #include <algorithm>
 #include <cfloat>
 #include <vector>
-<<<<<<< HEAD
-=======
 #include <cmath>
->>>>>>> tiny/master
 
 #include "caffe/layers/softmax_loss_layer.hpp"
 #include "caffe/util/math_functions.hpp"
@@ -275,7 +272,7 @@ void SoftmaxWithLossLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
         }
       }
     }
-    
+
     // Scale gradient
     Dtype normalizer = LossLayer<Dtype>::GetNormalizer(
         normalization_, outer_num_, inner_num_, count);

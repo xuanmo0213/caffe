@@ -115,8 +115,6 @@ class BaseConvolutionLayer : public Layer<Dtype> {
           pad_.cpu_data(), stride_.cpu_data(), dilation_.cpu_data(), col_buff);
     }
   }
-<<<<<<< HEAD
-=======
   inline void conv_kn2row_cpu(const Dtype* kernel, const int x, const int y, Dtype* kernel_buff) {
     if (!force_nd_im2col_ && num_spatial_axes_ == 2) {
       kn2row_cpu(kernel, conv_in_channels_, x, y,
@@ -126,7 +124,6 @@ class BaseConvolutionLayer : public Layer<Dtype> {
       LOG(FATAL) << "force_nd_im2col and kn2row opt could not be set at the same time";
     }
   }
->>>>>>> tiny/master
   inline void conv_col2im_cpu(const Dtype* col_buff, Dtype* data) {
     if (!force_nd_im2col_ && num_spatial_axes_ == 2) {
       col2im_cpu(col_buff, conv_in_channels_,
@@ -157,12 +154,9 @@ class BaseConvolutionLayer : public Layer<Dtype> {
           stride_.gpu_data(), dilation_.gpu_data(), col_buff);
     }
   }
-<<<<<<< HEAD
-=======
   inline void conv_kn2row_gpu(const Dtype* data, const int x, const int y, Dtype* col_buff) {
     NOT_IMPLEMENTED;
   }
->>>>>>> tiny/master
   inline void conv_col2im_gpu(const Dtype* col_buff, Dtype* data) {
     if (!force_nd_im2col_ && num_spatial_axes_ == 2) {
       col2im_gpu(col_buff, conv_in_channels_,
@@ -191,13 +185,10 @@ class BaseConvolutionLayer : public Layer<Dtype> {
 
   Blob<Dtype> col_buffer_;
   Blob<Dtype> bias_multiplier_;
-<<<<<<< HEAD
-=======
 
   Blob<Dtype> weights_buffer_;
   Blob<Dtype> output_buffer_;
   Blob<Dtype> tune_buffer_;
->>>>>>> tiny/master
 };
 
 }  // namespace caffe

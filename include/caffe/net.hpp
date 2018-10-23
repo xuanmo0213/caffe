@@ -6,11 +6,8 @@
 #include <string>
 #include <utility>
 #include <vector>
-<<<<<<< HEAD
-=======
 #include <fstream>
 #include <iostream>
->>>>>>> tiny/master
 
 #include "caffe/blob.hpp"
 #include "caffe/common.hpp"

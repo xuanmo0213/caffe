@@ -1,10 +1,7 @@
 #include <algorithm>
 #include <cfloat>
 #include <vector>
-<<<<<<< HEAD
-=======
 #include <cmath>
->>>>>>> tiny/master
 
 #include "caffe/layers/softmax_loss_layer.hpp"
 #include "caffe/util/math_functions.hpp"
