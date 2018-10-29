@@ -2,6 +2,12 @@
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 
+#if CV_VERSION_MAJOR == 4
+#define CV_CAP_PROP_FRAME_COUNT cv::CAP_PROP_FRAME_COUNT
+#define CV_CAP_PROP_POS_FRAMES cv::CAP_PROP_POS_FRAMES
+#define CV_FILLED cv::filled
+#endif
+
 #include <stdint.h>
 #include <algorithm>
 #include <csignal>

@@ -2,6 +2,10 @@
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
+#if CV_VERSION_MAJOR == 4
+#define CV_FILLED cv::FILLED
+#define CV_FOURCC cv::VideoWriter::fourcc
+#endif
 #endif  // USE_OPENCV
 
 #ifndef CAFFE_UTIL_BBOX_UTIL_H_
