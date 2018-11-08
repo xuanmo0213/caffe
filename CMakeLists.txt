@@ -9,6 +9,9 @@ endif()
 # ---[ Caffe project
 project(Caffe C CXX)
 
+# ---[ C++11 support required
+add_compile_options(-std=c++11)
+
 # ---[ Caffe version
 set(CAFFE_TARGET_VERSION "1.0.0-rc3" CACHE STRING "Caffe logical version")
 set(CAFFE_TARGET_SOVERSION "1.0.0-rc3" CACHE STRING "Caffe soname version")
@@ -70,9 +73,6 @@ include_directories(BEFORE src) # This is needed for gtest.
 # ---[ Subdirectories
 add_subdirectory(src/gtest)
 add_subdirectory(src/caffe)
-add_subdirectory(tools)
-add_subdirectory(examples)
-add_subdirectory(python)
 add_subdirectory(matlab)
 add_subdirectory(docs)
 
