@@ -1,6 +1,10 @@
 # This list is required for static linking and exported to CaffeConfig.cmake
 set(Caffe_LINKER_LIBS "")
 
+# ---[ Tcmalloc
+find_library ( TCMALLOC_LIBS NAMES tcmalloc_minimal)
+list(APPEND Caffe_LINKER_LIBS ${TCMALLOC_LIBS})
+
 # ---[ Boost
 find_package(Boost 1.46 REQUIRED COMPONENTS system thread filesystem regex)
 include_directories(SYSTEM ${Boost_INCLUDE_DIR})
