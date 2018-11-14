@@ -68,6 +68,11 @@ If a runtest is preferred, simple run
 ```
 make runtest
 ```
+## Pretrained Models
+A model pretrained on VOC2007 can be installed by following steps:
+```
+wget --no-check-certificate 'https://drive.google.com/uc?export=download&id=1Y5tjy0tJfzzKht6OkmzCEr4LpEOQ5ZZP' -O models_VGGNet_VOC0712_SSD_300x300.tar.gz
+```
 
 ## License
 Caffe is released under the BSD license. The BVLC reference models are released for unrestricted use.
